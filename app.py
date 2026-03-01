@@ -1,59 +1,43 @@
 import streamlit as st
 from datetime import datetime
 
-# 1. 페이지 설정 (가장 상단에 위치해야 함)
-st.set_page_config(page_title="갓생 레이스", layout="centered")
+# 1. 설정 (가장 위에 필수)
+st.set_page_config(page_title="과학고 추격기")
 
-# 2. 에러 방지를 위해 스타일 코드를 최대한 간결하게 수정
-st.markdown("""
-<style>
-    .stApp { background-color: #0e1117; color: white; }
-    div.stButton > button { 
-        width: 100%; 
-        height: 3em; 
-        border-radius: 15px; 
-        background-color: #5352ed; 
-        color: white; 
-        font-weight: bold;
-        border: none;
-    }
-</style>
-""", unsafe_allow_all_html=True)
+# 2. 제목
+st.title("🔥 과학고 벤치마킹 시스템")
+st.write("아이폰 홈 화면에 추가해서 실시간으로 확인하세요.")
 
-st.title("🔥 갓생 추격 레이스")
-
-# 3. 과학고 고스트 계산 (08:00 시작, 10시간 목표)
+# 3. 고스트(과학고) 시간 계산
 now = datetime.now()
+# 오늘 오전 8시 설정
 start_time = now.replace(hour=8, minute=0, second=0, microsecond=0)
 passed_seconds = (now - start_time).total_seconds()
 passed_seconds = max(0, passed_seconds)
 
-# 과학고는 하루 16시간 중 10시간 공부한다고 가정 (비율 0.625)
-ghost_time_secs = min(passed_seconds * 0.625, 10 * 3600)
+# 과학고는 오전 8시부터 밤 12시까지 일정하게 공부한다고 가정 (목표 10시간)
+ghost_hours = min((passed_seconds / (16 * 3600)) * 10, 10.0)
 
-# 4. 내 공부 데이터 (세션 저장용)
-if 'sec' not in st.session_state:
-    st.session_state.sec = 0.0
-if 'run' not in st.session_state:
-    st.session_state.run = False
+# 4. 내 공부 데이터 (임시 저장)
+if 'my_hours' not in st.session_state:
+    st.session_state.my_hours = 0.0
 
-# 5. 화면 표시
-st.subheader("🚀 과학고 고스트 페이스")
-st.progress(min(ghost_time_secs / 36000, 1.0))
-st.write(f"현재 {ghost_time_secs/3600:.1f}시간 지점 통과 중")
+# 5. 시각적 비교 (Progress Bar)
+st.subheader(f"🚀 과학고 고스트: {ghost_hours:.1f}시간")
+st.progress(ghost_hours / 10.0)
 
+st.subheader(f"👤 나의 공부량: {st.session_state.my_hours:.1f}시간")
+st.progress(min(st.session_state.my_hours / 10.0, 1.0))
+
+# 6. 제어 버튼
 st.divider()
+if st.button("➕ 공부 시간 30분 추가 (테스트용)"):
+    st.session_state.my_hours += 0.5
+    st.rerun()
 
-st.subheader("👤 나의 실시간 기록")
-st.progress(min(st.session_state.sec / 36000, 1.0))
-st.write(f"현재 {st.session_state.sec/3600:.1f}시간 공부 완료")
-
-# 6. 버튼 제어
-label = "⏸️ 일시 정지" if st.session_state.run else "▶️ 공부 시작"
-if st.button(label):
-    st.session_state.run = not st.session_state.run
-
-# 작동 확인을 위해 버튼 누를 때마다 15분씩 추가되도록 설정
-if st.session_state.run:
-    st.session_state.sec += 900
-    st.toast("시간이 업데이트되었습니다! 화면을 새로고침하세요.")
+# 7. 격차 잔소리 (시각적)
+gap = ghost_hours - st.session_state.my_hours
+if gap > 0:
+    st.error(f"⚠️ 과학고 학생보다 {gap:.1f}시간 뒤처져 있습니다!")
+else:
+    st.success(f"✅ 과학고 학생보다 {abs(gap):.1f}시간 앞서고 있습니다!")
