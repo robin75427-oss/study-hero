@@ -5,46 +5,81 @@ import time
 import requests
 from io import StringIO
 
-# 1. 설정 (사용자 정보 및 구글 연동)
+# 1. 설정
 SHEET_ID = '1ixGEspMFYDK84_DDiPtbdPInKAOO6pImbuzm93xF_48'
 SAVE_URL = 'https://script.google.com/macros/s/AKfycbw1BokrHiAQ2HFYXiSaGY48WSP4HXi1vIYh71zV9SM2j4U2Ttu8Bf0XA2SDZVYYz8Eohw/exec'
 READ_URL = f'https://docs.google.com/spreadsheets/d/{SHEET_ID}/gviz/tq?tqx=out:csv'
 
-# 데이터 저장 함수 (리다이렉션 허용 추가)
-def save_to_google(user_id, seconds):
-    params = {
-        "user_id": user_id,
-        "seconds": seconds
-    }
+st.set_page_config(page_title="갓생 레이스", layout="centered")
+
+def format_time(seconds):
+    try: s = float(seconds)
+    except: s = 0.0
+    h, m, sec = int(s // 3600), int((s % 3600) // 60), int(s % 60)
+    return f"{h:02d}:{m:02d}:{sec:02d}"
+
+# --- 1. 로그인 시스템 (가장 먼저 실행) ---
+if 'user_id' not in st.session_state:
+    st.title("🔐 공부방 입장")
+    user = st.text_input("닉네임을 입력하세요 (예: 나)")
+    if st.button("입장하기"):
+        if user:
+            st.session_state.user_id = user
+            st.rerun()
+    st.stop()
+
+# --- 2. 데이터 불러오기 함수 ---
+def get_db_seconds(user_id):
     try:
-        # allow_redirects=True가 핵심입니다. 구글 서버의 이동 경로를 끝까지 쫓아갑니다.
-        response = requests.get(SAVE_URL, params=params, allow_redirects=True, timeout=10)
-        return response.text == "Success"
-    except Exception as e:
-        st.error(f"연결 실패: {e}")
-        return False
+        res = requests.get(f"{READ_URL}&cachebust={time.time()}", timeout=5)
+        df = pd.read_csv(StringIO(res.text))
+        df.columns = ['user_id', 'seconds'] + list(df.columns[2:])
+        user_row = df[df['user_id'].astype(str).str.strip() == str(user_id).strip()]
+        if not user_row.empty:
+            return float(user_row['seconds'].values[0])
+    except: pass
+    return 0.0
 
-# (중략: 로그인 및 시간 계산 로직은 동일)
+# --- 3. [중요] 변수 초기화 (에러 방지 핵심) ---
+if 'is_running' not in st.session_state:
+    st.session_state.is_running = False
+if 'total_seconds' not in st.session_state:
+    st.session_state.total_seconds = get_db_seconds(st.session_state.user_id)
 
-# --- 저장 버튼 동작 부분 ---
+# --- 4. 타이머 계산 (변수가 생성된 후 실행) ---
+display_secs = float(st.session_state.total_seconds)
 if st.session_state.is_running:
-    if st.button("⏸️ 일시 정지 및 저장", use_container_width=True):
-        # 1. 최종 시간 계산
-        final_secs = st.session_state.total_seconds + (time.time() - st.session_state.start_stamp)
-        
-        # 2. 구글 시트 전송 시도
-        with st.spinner('구글 시트에 기록 중...'):
-            success = save_to_google(st.session_state.user_id, final_secs)
-            
-        if success:
+    if 'start_stamp' not in st.session_state:
+        st.session_state.start_stamp = time.time()
+    display_secs += (time.time() - st.session_state.start_stamp)
+
+# --- 5. 화면 표시 및 제어 ---
+st.title(f"🔥 {st.session_state.user_id}의 레이스")
+st.header(f"⏱️ {format_time(display_secs)}")
+
+c1, c2 = st.columns(2)
+with c1:
+    if not st.session_state.is_running:
+        if st.button("▶️ 시작", use_container_width=True):
+            st.session_state.start_stamp = time.time()
+            st.session_state.is_running = True
+            st.rerun()
+    else:
+        if st.button("⏸️ 정지 및 저장", use_container_width=True):
+            final_secs = st.session_state.total_seconds + (time.time() - st.session_state.start_stamp)
+            # 구글 시트 저장
+            try: requests.get(f"{SAVE_URL}?user_id={st.session_state.user_id}&seconds={final_secs}", timeout=5)
+            except: pass
             st.session_state.total_seconds = final_secs
             st.session_state.is_running = False
-            st.success("✅ 저장 성공!")
-            time.sleep(1) # 메시지 볼 시간 확보
+            st.success("저장 시도 완료!")
             st.rerun()
-        else:
-            # 저장 실패 시에도 세션엔 반영해서 앱 내에서는 유지되게 함
-            st.session_state.total_seconds = final_secs
-            st.session_state.is_running = False
-            st.warning("⚠️ 시트 저장에 실패했지만 앱에는 기록되었습니다.")
-            st.rerun()
+
+with c2:
+    if st.button("🔄 동기화", use_container_width=True):
+        st.session_state.total_seconds = get_db_seconds(st.session_state.user_id)
+        st.rerun()
+
+if st.session_state.is_running:
+    time.sleep(1)
+    st.rerun()
