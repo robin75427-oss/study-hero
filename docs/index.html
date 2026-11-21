@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>갓생 레이스</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="갓생 레이스">
+<meta name="theme-color" content="#0f0f14">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #0f0f14; --card: #1b1b24; --text: #f4f4f7; --muted: #9a9aab;
+    --accent: #ff6b35; --accent2: #ffb347; --ok: #3ecf8e; --line: #2a2a36;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center;
+    padding: calc(env(safe-area-inset-top) + 24px) 20px calc(env(safe-area-inset-bottom) + 24px);
+    -webkit-user-select: none; user-select: none; }
+  .wrap { width: 100%; max-width: 420px; flex: 1; display: flex; flex-direction: column; }
+  h1 { font-size: 26px; margin: 8px 0 4px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 24px; }
+  input { width: 100%; font-size: 18px; padding: 16px; border-radius: 14px; border: 1px solid var(--line);
+    background: var(--card); color: var(--text); outline: none; -webkit-user-select: text; user-select: text; }
+  input:focus { border-color: var(--accent); }
+  button { font: inherit; font-size: 18px; font-weight: 600; border: 0; border-radius: 16px; padding: 18px;
+    color: #fff; background: var(--card); width: 100%; cursor: pointer; transition: transform .08s; }
+  button:active { transform: scale(.97); }
+  button:disabled { opacity: .5; }
+  .primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); }
+  .stop { background: #e5484d; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+  .timer-card { background: var(--card); border-radius: 28px; padding: 40px 16px; text-align: center; margin-top: 8px;
+    border: 1px solid var(--line); position: relative; overflow: hidden; }
+  .timer-card.running { border-color: var(--accent); box-shadow: 0 0 40px rgba(255,107,53,.25); }
+  .time { font-size: clamp(48px, 16vw, 72px); font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  .state { color: var(--muted); margin-top: 8px; font-size: 14px; }
+  .running .state { color: var(--accent2); }
+  .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translateX(-50%) translateY(20px);
+    background: #2b2b38; padding: 12px 18px; border-radius: 12px; font-size: 14px; opacity: 0; transition: .25s; pointer-events: none;
+    max-width: 90%; text-align: center; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.ok { background: #1f4d3a; } .toast.err { background: #5a2326; }
+  .spacer { flex: 1; }
+  .link { background: none; color: var(--muted); font-size: 14px; font-weight: 400; padding: 12px; }
+  .hidden { display: none !important; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin-top: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 로그인 화면 -->
+  <section id="login">
+    <h1>🔐 공부방 입장</h1>
+    <p class="sub">닉네임을 입력하세요 (예: WON)</p>
+    <input id="nick" autocomplete="off" autocapitalize="off" placeholder="닉네임" enterkeyhint="go">
+    <div style="height:12px"></div>
+    <button class="primary" id="enterBtn">입장하기</button>
+    <p class="hint" id="installHint"></p>
+  </section>
+
+  <!-- 타이머 화면 -->
+  <section id="main" class="hidden" style="display:flex;flex-direction:column;flex:1">
+    <h1 id="title">🔥 레이스</h1>
+    <p class="sub">공부 시간은 구글 시트에 저장돼요</p>
+    <div class="timer-card" id="card">
+      <div class="time" id="time">00:00:00</div>
+      <div class="state" id="state">대기 중</div>
+    </div>
+    <div class="row">
+      <button class="primary" id="toggleBtn">▶️ 시작</button>
+      <button id="syncBtn">🔄 동기화</button>
+    </div>
+    <div class="spacer"></div>
+    <button class="link" id="logoutBtn">닉네임 변경</button>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 설정 (app.py와 동일한 구글 시트 / Apps Script) =====
+const SHEET_ID = '1ixGEspMFYDK84_DDiPtbdPInKAOO6pImbuzm93xF_48';
+const SAVE_URL = 'https://script.google.com/macros/s/AKfycbw_sxh3L0AujjUuMELS1njvOtenY2olu_Wqhw_Wjxggt2O7zitg-E-cbW7rRFdbunQ7nA/exec';
+
+// ===== 로컬 저장 (앱을 닫아도 타이머 유지) =====
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+let state = store.get('race', { user: null, total: 0, startStamp: null });
+const save = () => store.set('race', state);
+
+const $ = id => document.getElementById(id);
+function fmt(s) {
+  s = Math.max(0, Math.floor(Number(s) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), sec = s % 60;
+  return [h, m, sec].map(n => String(n).padStart(2, '0')).join(':');
+}
+let toastTimer;
+function toast(msg, kind = '') {
+  const t = $('toast'); t.textContent = msg; t.className = 'toast show ' + kind;
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.className = 'toast', 2500);
+}
+
+// ===== 구글 시트 읽기 (JSONP 방식: CORS 문제 없음) =====
+function fetchSheetSeconds(user) {
+  return new Promise((resolve, reject) => {
+    const cb = '__gviz_' + Date.now();
+    const s = document.createElement('script');
+    const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 10000);
+    function cleanup() { clearTimeout(timer); delete window[cb]; s.remove(); }
+    window[cb] = resp => {
+      cleanup();
+      try {
+        const rows = (resp.table && resp.table.rows) || [];
+        for (const r of rows) {
+          const id = r.c && r.c[0] && r.c[0].v;
+          if (id != null && String(id).trim() === user) {
+            return resolve(Number(r.c[1] && r.c[1].v) || 0);
+          }
+        }
+        resolve(0);
+      } catch (e) { reject(e); }
+    };
+    s.onerror = () => { cleanup(); reject(new Error('network')); };
+    s.src = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?headers=1&tqx=responseHandler:${cb}&t=${Date.now()}`;
+    document.head.appendChild(s);
+  });
+}
+
+// ===== 구글 시트 저장 (Apps Script) =====
+async function saveToSheet(user, seconds) {
+  const url = `${SAVE_URL}?user_id=${encodeURIComponent(user)}&seconds=${seconds}`;
+  await fetch(url, { mode: 'no-cors', cache: 'no-store' });
+}
+
+// ===== 화면 =====
+const running = () => state.startStamp != null;
+const current = () => state.total + (running() ? (Date.now() - state.startStamp) / 1000 : 0);
+
+function render() {
+  const logged = !!state.user;
+  $('login').classList.toggle('hidden', logged);
+  $('main').classList.toggle('hidden', !logged);
+  if (!logged) return;
+  $('title').textContent = `🔥 ${state.user}의 레이스`;
+  $('time').textContent = fmt(current());
+  $('card').classList.toggle('running', running());
+  $('state').textContent = running() ? '집중 중… 🔥' : '대기 중';
+  $('toggleBtn').textContent = running() ? '⏸️ 정지 및 저장' : '▶️ 시작';
+  $('toggleBtn').className = running() ? 'stop' : 'primary';
+  $('syncBtn').disabled = running();
+}
+setInterval(() => { if (state.user && running()) $('time').textContent = fmt(current()); }, 250);
+
+async function sync(silent) {
+  try {
+    const secs = await fetchSheetSeconds(state.user);
+    state.total = secs; save(); render();
+    if (!silent) toast('시트와 동기화했어요', 'ok');
+    return true;
+  } catch {
+    if (!silent) toast('동기화 실패 — 네트워크를 확인하세요', 'err');
+    return false;
+  }
+}
+
+$('enterBtn').onclick = async () => {
+  const u = $('nick').value.trim();
+  if (!u) return toast('닉네임을 입력하세요');
+  state = { user: u, total: 0, startStamp: null }; save(); render();
+  await sync(true);
+};
+$('nick').addEventListener('keydown', e => { if (e.key === 'Enter') $('enterBtn').click(); });
+
+$('toggleBtn').onclick = async () => {
+  const btn = $('toggleBtn');
+  if (!running()) {
+    btn.disabled = true;
+    await sync(true);                 // 시작 시 최신 기록을 가져옴
+    state.startStamp = Date.now(); save(); render();
+    btn.disabled = false;
+    if (navigator.vibrate) navigator.vibrate(30);
+  } else {
+    state.total = current(); state.startStamp = null; save(); render();
+    btn.disabled = true;
+    try { await saveToSheet(state.user, state.total); toast('시트에 기록되었습니다!', 'ok'); }
+    catch { toast('시트 저장 실패 — 앱에는 기록되었어요', 'err'); }
+    btn.disabled = false;
+  }
+};
+$('syncBtn').onclick = () => sync(false);
+$('logoutBtn').onclick = () => {
+  if (running() && !confirm('타이머가 돌아가고 있어요. 그래도 나갈까요? (기록은 저장되지 않아요)')) return;
+  state = { user: null, total: 0, startStamp: null }; save(); render();
+};
+
+// 앱으로 다시 돌아왔을 때 화면 갱신
+document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+
+// 홈 화면 추가 안내 (iPhone Safari에서 아직 설치 안 했을 때)
+const standalone = window.navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+if (!standalone && /iPhone|iPad|iPod/.test(navigator.userAgent)) {
+  $('installHint').textContent = 'Safari 하단의 공유 버튼(⬆️) → "홈 화면에 추가"를 누르면 앱처럼 쓸 수 있어요.';
+}
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+render();
+if (state.user && !running()) sync(true);
+</script>
+</body>
+</html>
